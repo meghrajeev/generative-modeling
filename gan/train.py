@@ -81,7 +81,7 @@ def train_model(
     torch.backends.cudnn.benchmark = True # speed up training
     ds_transforms = build_transforms()
     train_loader = torch.utils.data.DataLoader(
-        Dataset(root="../datasets/CUB_200_2011_32", transform=ds_transforms),
+        Dataset(root="datasets/CUB_200_2011_32", transform=ds_transforms),
         batch_size=batch_size,
         shuffle=True,
         num_workers=4,
@@ -112,9 +112,13 @@ def train_model(
                 # 2. Compute discriminator output on the train batch.
                 # 3. Compute the discriminator output on the generated data.
 
-                gen_output = gen.forward(batch_size).detach()
-                disc_output_train = disc.forward(train_batch)
-                disc_output_gen = disc.forward(gen_output)
+                # gen_output = gen.forward(batch_size).detach()
+                # disc_output_train = disc.forward(train_batch)
+                # disc_output_gen = disc.forward(gen_output)
+                
+                gen_output = gen(train_batch.shape[0])
+                disc_output_train = disc(train_batch).reshape(-1)
+                disc_output_gen = disc(gen_output).reshape(-1)
 
                 # TODO: 1.5 Compute the interpolated batch and run the discriminator on it.
                 
@@ -127,6 +131,11 @@ def train_model(
                 #     device=torch.device("cuda"),
                 # )
                 # disc_output_int = disc.forward(interpolated)
+                epsilon = torch.rand((train_batch.shape[0], 1, 1, 1)).to("cuda")
+                
+                interp = epsilon * train_batch + (1-epsilon) * gen_output
+                
+                discrim_interp = disc(interp).reshape(-1)
 
                 # TODO 1.3: compute loss for discriminator
                 discriminator_loss = disc_loss_fn(
@@ -136,27 +145,29 @@ def train_model(
 
                 
             optim_discriminator.zero_grad(set_to_none=True)
-            scaler.scale(discriminator_loss).backward()
+            scaler.scale(discriminator_loss).backward(retain_graph=True)
             scaler.step(optim_discriminator)
-            scheduler_discriminator.step()
+            #scheduler_discriminator.step()
 
             if iters % 5 == 0:
                 with torch.cuda.amp.autocast(enabled=amp_enabled):
                     # TODO 1.2: compute generator and discriminator output on generated data.
-                    gen_output = gen.forward(batch_size)
-                    disc_output_gen = disc.forward(gen_output)
+                    gen_output = gen(train_batch.shape[0])
+                    disc_output_gen = disc(gen_output)
                     generator_loss = gen_loss_fn(disc_output_gen)
                 optim_generator.zero_grad(set_to_none=True)
                 scaler.scale(generator_loss).backward()
                 scaler.step(optim_generator)
                 scheduler_generator.step()
+            
+            scheduler_discriminator.step()    
 
             if iters % log_period == 0 and iters != 0:
                 with torch.no_grad():
                     with torch.cuda.amp.autocast(enabled=amp_enabled):
                         # TODO 1.2: Generate samples using the generator, make sure they lie in the range [0, 1].
-                        generated_samples = gen.forward(batch_size)
-                    generated_samples = torch.clamp(generated_samples, 0, 1)
+                        generated_samples = gen(batch_size)
+                        generated_samples = torch.clamp(generated_samples, 0, 1)
                     save_image(
                         generated_samples.data.float(),
                         prefix + "samples_{}.png".format(iters),
