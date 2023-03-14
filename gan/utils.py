@@ -2,7 +2,7 @@ import argparse
 import torch
 from cleanfid import fid
 from matplotlib import pyplot as plt
-
+import torchvision
 
 def save_plot(x, y, xlabel, ylabel, title, filename):
     plt.plot(x, y)
@@ -37,6 +37,21 @@ def interpolate_latent_space(gen, path):
     # Forward the samples through the generator.
     # Save out an image holding all 100 samples.
     # Use torchvision.utils.save_image to save out the visualization.
+    num_samples = 100
+    z_dim = 128
+    z = torch.zeros(num_samples, z_dim)
+    z[:, :2] = torch.linspace(-1, 1, 10).view(1, -1).repeat(10, 1).t().reshape(-1, 2)
+    z = z.view(num_samples, z_dim, 1, 1).to(gen.device)
+    
+    # Forward the samples through the generator
+    with torch.no_grad():
+        samples = gen.forward_given_samples(z)
+    
+    # Rescale samples to [0, 1] range
+    samples = (samples / 2 + 0.5)
+    
+    # Save out an image holding all 100 samples.
+    torchvision.utils.save_image.save_image(samples, path, nrow=10, padding=2)
 
 def get_args():
     parser = argparse.ArgumentParser()

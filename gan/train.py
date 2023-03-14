@@ -7,12 +7,20 @@ from torchvision import transforms
 from torchvision.utils import save_image
 from PIL import Image
 from torchvision.datasets import VisionDataset
+from networks import Generator, Discriminator
 
 
 def build_transforms():
     # TODO 1.2: Add two transforms:
     # 1. Convert input image to tensor.
     # 2. Rescale input image to be between -1 and 1.
+    ds_transforms = transforms.Compose([
+      transforms.ToTensor(),
+      # currently between 0 and 1. Subtracting by 0.5 makes it b/w -0.5 and 0.5
+      # if std = 0.5, we essentially multiply by 2. So now they are between -1 and 1
+      # 3 values in list becaususe one for each channel.
+      transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+    ])
     # NOTE: don't do anything fancy for 2, hint: the input image is between 0 and 1.
     return ds_transforms
 
@@ -24,6 +32,16 @@ def get_optimizers_and_schedulers(gen, disc):
     # 2. Construct the learning rate schedulers for the generator and discriminator.
     # The learning rate for the discriminator should be decayed to 0 over 500K iterations.
     # The learning rate for the generator should be decayed to 0 over 100K iterations.
+    optim_generator = torch.optim.Adam(gen.parameters(),lr=0.0002, betas=(0, 0.9))
+    optim_discriminator = torch.optim.Adam(disc.parameters(),lr=0.0002, betas=(0, 0.9))
+    scheduler_generator = torch.optim.lr_scheduler.LambdaLR(
+        optim_generator,
+        lr_lambda=lambda epoch: max(0, 1 - epoch / 100000)
+    )
+    scheduler_discriminator = torch.optim.lr_scheduler.LambdaLR(
+        optim_discriminator,
+        lr_lambda=lambda epoch: max(0, 1 - epoch / 500000)
+    )
     return (
         optim_discriminator,
         scheduler_discriminator,
@@ -83,6 +101,7 @@ def train_model(
     fids_list = []
     iters_list = []
     pbar = tqdm(total = num_iterations)
+    
     while iters < num_iterations:
         for train_batch in train_loader:
             with torch.cuda.amp.autocast(enabled=amp_enabled):
@@ -93,9 +112,29 @@ def train_model(
                 # 2. Compute discriminator output on the train batch.
                 # 3. Compute the discriminator output on the generated data.
 
+                gen_output = gen.forward(batch_size).detach()
+                disc_output_train = disc.forward(train_batch)
+                disc_output_gen = disc.forward(gen_output)
+
                 # TODO: 1.5 Compute the interpolated batch and run the discriminator on it.
+                
+
+                # interpolated = interpolate(
+                #     train_batch,
+                #     gen_output,
+                #     mode="mix",
+                #     interpolation=0.5,
+                #     device=torch.device("cuda"),
+                # )
+                # disc_output_int = disc.forward(interpolated)
+
+                # TODO 1.3: compute loss for discriminator
+                discriminator_loss = disc_loss_fn(
+                    disc_output_train, disc_output_gen
+                )
 
 
+                
             optim_discriminator.zero_grad(set_to_none=True)
             scaler.scale(discriminator_loss).backward()
             scaler.step(optim_discriminator)
@@ -104,6 +143,9 @@ def train_model(
             if iters % 5 == 0:
                 with torch.cuda.amp.autocast(enabled=amp_enabled):
                     # TODO 1.2: compute generator and discriminator output on generated data.
+                    gen_output = gen.forward(batch_size)
+                    disc_output_gen = disc.forward(gen_output)
+                    generator_loss = gen_loss_fn(disc_output_gen)
                 optim_generator.zero_grad(set_to_none=True)
                 scaler.scale(generator_loss).backward()
                 scaler.step(optim_generator)
@@ -113,6 +155,8 @@ def train_model(
                 with torch.no_grad():
                     with torch.cuda.amp.autocast(enabled=amp_enabled):
                         # TODO 1.2: Generate samples using the generator, make sure they lie in the range [0, 1].
+                        generated_samples = gen.forward(batch_size)
+                    generated_samples = torch.clamp(generated_samples, 0, 1)
                     save_image(
                         generated_samples.data.float(),
                         prefix + "samples_{}.png".format(iters),

@@ -10,12 +10,14 @@ from train import train_model
 
 
 def compute_discriminator_loss(
-    discrim_real, discrim_fake, discrim_interp, interp, lamb
+    discrim_real, discrim_fake, discrim_interp = None, interp = None, lamb = None
 ):
     """
     TODO 1.3.1: Implement GAN loss for discriminator.
     Do not use discrim_interp, interp, lamb. They are placeholders for Q1.5.
     """
+    batch_size = discrim_real.shape[0]
+    loss = (1/batch_size) * torch.sum(torch.log(discrim_real) + torch.log(1 - discrim_fake))
     return loss
 
 
@@ -23,6 +25,8 @@ def compute_generator_loss(discrim_fake):
     """
     TODO 1.3.1: Implement GAN loss for generator.
     """
+    batch_size = discrim_fake.shape[0]
+    loss = (1/batch_size) * (torch.sum(torch.log(1 - discrim_fake)))
     return loss
 
 
